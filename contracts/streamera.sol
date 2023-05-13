@@ -52,12 +52,67 @@ interface IERC20 {
     function approve(address spender, uint amount) external returns (bool);
 }
 
+interface ISquidMulticall {
+    struct Call {
+        CallType callType;
+        address target;
+        uint256 value;
+        bytes callData;
+        bytes payload;
+    }
+}
+
+interface ISquidRouter {
+    function bridgeCall(
+        string calldata destinationChain,
+        string calldata bridgedTokenSymbol,
+        uint256 amount,
+        ISquidMulticall.Call[] calldata calls,
+        address refundRecipient,
+        bool forecallEnabled
+    ) external payable;
+
+    function callBridge(
+        address token,
+        uint256 amount,
+        string calldata destinationChain,
+        string calldata destinationAddress,
+        string calldata bridgedTokenSymbol,
+        ISquidMulticall.Call[] calldata calls
+    ) external payable;
+
+    function callBridgeCall(
+        address token,
+        uint256 amount,
+        string calldata destinationChain,
+        string calldata bridgedTokenSymbol,
+        ISquidMulticall.Call[] calldata sourceCalls,
+        ISquidMulticall.Call[] calldata destinationCalls,
+        address refundRecipient,
+        bool forecallEnabled
+    ) external payable;
+}
+
 contract Streamera {
     address payable public admin;
     uint public platformFee;
     address public WETH;
+    address public dexRouter;
 
-    constructor(address _WETH, uint _platformFee) public {
+    struct CollectedToken {
+        uint balance;
+        bool existed;
+    }
+
+    // store collected tax & token exist status
+    mapping(address => CollectedToken) private tokenHolding;
+    // for swap collected token looping purpose (store all token other than WETH)
+    address[] private uniqueTokens;
+
+    enum SquidCallType{ callBridgeCall, callBridge, bridgeCall }
+
+    constructor(address _dexRouter, address _WETH, uint _platformFee) public {
+        dexRouter = _dexRouter;
         platformFee = _platformFee;
         WETH = _WETH;
     }
@@ -69,8 +124,16 @@ contract Streamera {
         _;
     }
 
-    mapping(address => uint) private tokenHolding;
-    address[] private tokens;
+    function setPlatformFee(uint _fee) external onlyAdmin {
+        platformFee = _fee;
+    }
+
+    function addNewToken(string memory newString) public {
+        require(!uniqueStrings[newString], "String already exists");
+
+        uniqueStrings[newString] = true;
+        uniqueStringArray.push(newString);
+    }
 
     function getAmountsOut(address _router, uint amountIn, address[] memory path) public view returns (uint[] memory amounts) {
         return IUniswapV2Router02(_router).getAmountsOut(amountIn, path);
@@ -81,8 +144,48 @@ contract Streamera {
         return _uniswapV2Factory.getPair(tokenA, tokenB);
     }
 
+    function takePlatformFee(string tokenA, uint amountIn) internal returns (uint) {
+        // only push token when it does not exist
+        if (!tokenHolding[tokenA].existed && tokenA != WETH) {
+            uniqueTokens.push(tokenA);
+            tokenHolding[tokenA].existed = true;
+        }
+
+        uint platformCharges = amountIn * platformFee / uint(100);
+        tokenHolding[tokenA].balance += platformCharges;
+        amountIn = amountIn - platformCharges;
+        return amountIn;
+    }
+
+    function squidSwap(address _squid, address tokenA, string calldata _payload, uint amountIn) payable external {
+        // native to native (non-ausdt)
+        // native to token (non-ausdt)
+        // token to native (non-ausdt)
+        // callBridgeCall
+
+        // bridgeCall (anything that start with ausdt)
+        bytes memory data = bytes(_payload);
+
+        // take platform fee
+        amountIn = takePlatformFee(tokenA, amountIn);
+
+        // check if user passed native (prioritize native)
+        if (msg.value > 0) {
+            amountIn = msg.value;
+            // swap all the native to wrapped token
+            IERC20(WETH).deposit{value: msg.value}();
+        } else {
+            // transfer user fund to contract first
+            TransferHelper.safeTransferFrom(
+                token, msg.sender, address(this), amount
+            );
+        }
+
+        ISquidRouter(_squid).call(data);
+    }
+
     // token <-> token swap (same token) - working
-    // native <-> native swap (same token) - working (tax missing?)
+    // native <-> native swap (same token) - working (tax amount showed in bsc contract page is wrong, kindly go to the particular token page to check user balance)
     // token <-> token swap (diff token) - working
     // native <-> token swap (diff token) - working
     // token <-> native swap (diff token) - working
@@ -105,9 +208,7 @@ contract Streamera {
         }
 
         // take platform fee
-        uint platformCharges = amountIn * platformFee / uint(100);
-        tokenHolding[tokenA] += platformCharges;
-        amountIn = amountIn - platformCharges;
+        amountIn = takePlatformFee(tokenA, amountIn);
 
         if (tokenA != tokenB) {
             // ***************************
@@ -146,7 +247,7 @@ contract Streamera {
             // *********************************
             // transfer same token / same native
             // *********************************
-            
+
             if (nativeFund && tokenB == WETH) {
                 // transfer native fund to streamer
                 IERC20(WETH).withdraw(amountIn);
@@ -156,6 +257,21 @@ contract Streamera {
                 TransferHelper.safeTransfer(tokenB, recipient, amountIn);
             }
         }
+    }
+
+    // retrieve platform fee (convert all to wrapped ETH)
+    function sendTokenBackAll(address token) external onlyAdmin {
+        for (uint i = 0; i < uniqueTokens.length; i++) {
+            address tokenA = uniqueTokens[i];
+
+            // swap all the token to WETH
+            localSwap(dexRouter, tokenA, WETH, IERC20(tokenA).balanceOf(address(this)), address(this), false);
+
+            // set holding balance to zero
+            tokenHolding[tokenA].balance = 0;
+        }
+
+        IERC20(WETH).transfer(admin, IERC20(WETH).balanceOf(address(this)));
     }
 
     // retrieve platform fee
