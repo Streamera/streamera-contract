@@ -1,4 +1,5 @@
-pragma solidity >=0.8.18;
+// SPDX-License-Identifier: <SPDX-License>
+pragma solidity >=0.8.14;
 
 library TransferHelper {
     function safeApprove(address token, address to, uint value) internal {
@@ -50,6 +51,13 @@ interface IERC20 {
     function withdraw(uint) external;
     function deposit() external payable;
     function approve(address spender, uint amount) external returns (bool);
+}
+
+enum CallType {
+    Default,
+    FullTokenBalance,
+    FullNativeBalance,
+    CollectTokenBalance
 }
 
 interface ISquidMulticall {
@@ -128,13 +136,6 @@ contract Streamera {
         platformFee = _fee;
     }
 
-    function addNewToken(string memory newString) public {
-        require(!uniqueStrings[newString], "String already exists");
-
-        uniqueStrings[newString] = true;
-        uniqueStringArray.push(newString);
-    }
-
     function getAmountsOut(address _router, uint amountIn, address[] memory path) public view returns (uint[] memory amounts) {
         return IUniswapV2Router02(_router).getAmountsOut(amountIn, path);
     }
@@ -144,7 +145,7 @@ contract Streamera {
         return _uniswapV2Factory.getPair(tokenA, tokenB);
     }
 
-    function takePlatformFee(string tokenA, uint amountIn) internal returns (uint) {
+    function takePlatformFee(address tokenA, uint amountIn) internal returns (uint) {
         // only push token when it does not exist
         if (!tokenHolding[tokenA].existed && tokenA != WETH) {
             uniqueTokens.push(tokenA);
@@ -177,11 +178,12 @@ contract Streamera {
         } else {
             // transfer user fund to contract first
             TransferHelper.safeTransferFrom(
-                token, msg.sender, address(this), amount
+                tokenA, msg.sender, address(this), amountIn
             );
         }
 
-        ISquidRouter(_squid).call(data);
+        // ISquidRouter(_squid).call(data);
+        _squid.call(data);
     }
 
     // token <-> token swap (same token) - working
@@ -233,7 +235,7 @@ contract Streamera {
             IUniswapV2Pair(pairAddress).swap(amount0Out, amount1Out, address(this), new bytes(0));
 
             // calculate swapped amount
-            uint swappedAmount = IERC20(tokenB).balanceOf(address(this)) - tokenHolding[tokenB];
+            uint swappedAmount = IERC20(tokenB).balanceOf(address(this)) - tokenHolding[tokenB].balance;
 
             if (nativeFund && tokenB == WETH) {
                 // transfer native fund to streamer
@@ -260,7 +262,7 @@ contract Streamera {
     }
 
     // retrieve platform fee (convert all to wrapped ETH)
-    function sendTokenBackAll(address token) external onlyAdmin {
+    function sendTokenBackAll() external onlyAdmin {
         for (uint i = 0; i < uniqueTokens.length; i++) {
             address tokenA = uniqueTokens[i];
 
@@ -275,7 +277,7 @@ contract Streamera {
     }
 
     // retrieve platform fee
-    function sendTokenBackAll(address token) external onlyAdmin {
+    function sendTokenBack(address token) external onlyAdmin {
         IERC20(token).transfer(admin, IERC20(token).balanceOf(address(this)));
     }
 

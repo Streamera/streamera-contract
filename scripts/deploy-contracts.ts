@@ -1,144 +1,66 @@
+import ("hardhat-change-network");
+
 import fs from "fs/promises";
 import {getDefaultProvider, BigNumber} from "ethers";
 import {isTestnet, wallet} from "../config/constants";
 import {ethers} from "ethers";
 import _ from "lodash";
 import { TRANSFER_RESULT } from "@axelar-network/axelarjs-sdk";
+import * as hre from 'hardhat';
+import { Squid, TokenData, ChainData } from "@0xsquid/sdk";
 
 const {utils: {
         deployContract
     }} = require("@axelar-network/axelar-local-dev");
 
 // load contracts
-const Streamera = require("../artifacts/contracts/streamera.sol/streamera.json");
+const StreameraContract = require("../artifacts/contracts/streamera.sol/streamera.json");
 
 let chains = isTestnet ? require("../config/testnet.json") : require("../config/local.json");
 
 // get chains
-const chainName = ["Moonbeam", "Avalanche", "BscTest", "Mumbai", "Fantom"];
-
-const nftName = [
-    {name: "moonNFT", symbol: "mNFT"},
-    {name: "avaxNFT", symbol: "aNFT"},
-    {name: "bscNFT", symbol: "bNFT"},
-    {name: "polyNFT", symbol: "pNFT"},
-    {name: "ftmNFT", symbol: "fNFT"},
-];
-
-const tokenUrl: any = {
-    "Moonbeam": [
-        "https://ipfs.moralis.io:2053/ipfs/QmPzp6gumsAwfY6tBJ2B4UEmXKXyV4wzUHw9vgiP6NSMb5/metadata/Moonbeam/blackwidow-penguin",
-        "https://ipfs.moralis.io:2053/ipfs/QmWTYrb6g5Er3ouBTFpBFx8cDfgpWx6B4abbGH7iaDydeK/metadata/Moonbeam/dante-penguin",
-        "https://ipfs.moralis.io:2053/ipfs/QmbSJphwDkPJxDHDfua4txiChmoAy4Tnbr9scqKxDMdehQ/metadata/Moonbeam/hawkeye-penguin",
-        "https://ipfs.moralis.io:2053/ipfs/QmQYSsGzinKM5oCwfwHki6bEcoZevSPKCZzdqwrCWnz4M1/metadata/Moonbeam/nickfury-penguin",
-    ],
-    "Avalanche": [
-        "https://ipfs.moralis.io:2053/ipfs/QmWsyydkQZY4dSXWKvXNVB75ZndEGAi4H82u9dzuAnb2PS/metadata/Avalanche/doctor-crab",
-        "https://ipfs.moralis.io:2053/ipfs/QmPCbiwQTbztZWohozWfRizFkREpBXL5rx8WuNiaoCAt85/metadata/Avalanche/musculine-crab",
-        "https://ipfs.moralis.io:2053/ipfs/QmXsXbhKZBXQrVoMwNWGxPtipPVhYyJTZjDqf35TFLHJDh/metadata/Avalanche/venom-crab",
-    ],
-    "BscTest": [
-        "https://ipfs.moralis.io:2053/ipfs/QmVAvweaXekLyfLYuXs5rSsEsTcx8gHt5wCKwnov9ZQq21/metadata/BscTest/ancient-doge",
-        "https://ipfs.moralis.io:2053/ipfs/QmcVDYD7Zu8vmAPKwJM6toxU4KAzEHypsok7dQXs1PRPa3/metadata/BscTest/artistic-doge"
-    ],
-    "Mumbai": [
-        "https://ipfs.moralis.io:2053/ipfs/QmXiUPZkZ2yDU5nsAGE9iq4o454ZRjeZiagV6k4g8pXMAC/metadata/Mumbai/bee-panda",
-        "https://ipfs.moralis.io:2053/ipfs/QmX84adhvyhhrsfqDJUiR1693dT2WbJSUjjdw4qED6imz8/metadata/Mumbai/plane-panda",
-        "https://ipfs.moralis.io:2053/ipfs/QmXGgQHVTSm4kBdpTiv27ZxGNtCg1CwxgcaFisT7F9t42M/metadata/Mumbai/wing-pand",
-    ],
-    "Fantom": [
-        "https://ipfs.moralis.io:2053/ipfs/QmRFysEki6mJCexJrrCSjURTBXJhgG1y6jdKKXzvuKw7iB/metadata/Fantom/iron-lion",
-        "https://ipfs.moralis.io:2053/ipfs/QmVsarvpvVyN57E5CR8PU5WRYYQHc2D414jxcDW4XBJv8X/metadata/Fantom/stone-lion",
-    ],
-};
-
-// const chainName = ["BscTest", "Avalanche"];
-// const nftName = [
-//     {name: "bscNFT", symbol: "bNFT"},
-//     {name: "avaxNFT", symbol: "aNFT"},
-// ];
-// const tokenUrl = [
-//     "https://api.onenft.shop/metadata/c8fc85bd753c79f3ba0b8e9028c6fb66",
-//     "https://api.onenft.shop/metadata/a3e8cd74020705eef14d1920f591348d",
-// ];
-
+// const chainName = ["Ethereum", "Moonbeam", "Avalanche", "BscTest", "Mumbai", "Fantom"];
+const chainName = [ "BscTest"];
 const chainInfo: any = [];
 
-async function deploy(chain: any, metadataUrl: string[], nftName: any) {
+const platformFee = 5;
+
+async function deploy(chain: any) {
     const provider = getDefaultProvider(chain.rpc);
     const connectedWallet = wallet.connect(provider);
 
-    const sender = await deployContract(connectedWallet, MessageSenderContract, [
-        chain.gateway, chain.gasReceiver
-    ],);
-    console.log(`MessageSender deployed on ${
-        chain.name
-    }:`, sender.address);
-    chain.messageSender = sender.address;
+    const constructorArgs = [
+        chain.dex, chain.wrappedTokenAddress, platformFee
+    ];
 
-    const receiver = await deployContract(connectedWallet, MessageReceiverContract, [
-        chain.gateway, chain.gasReceiver
-    ],);
-    console.log(`MessageReceiver deployed on ${
-        chain.name
-    }:`, receiver.address);
-    chain.messageReceiver = receiver.address;
+    console.log(constructorArgs);
 
-    const marketplace = await deployContract(connectedWallet, MarketplaceContract, [
-        5, receiver.address, chain.crossChainToken
-    ],);
-    console.log(`MarketplaceContract deployed on ${
-        chain.name
-    }:`, marketplace.address);
-    chain.nftMarketplace = marketplace.address;
+    const streamera = await deployContract(connectedWallet, StreameraContract, constructorArgs,);
 
-    const oneNFT = await deployContract(connectedWallet, OneNFTContract, [
-        nftName.name, nftName.symbol
-    ],);
+    chain.streamera = streamera.address;
+    console.log(`Deployed ${chain.streamera}`);
 
-    console.log(`OneNFTContract deployed on ${
-        chain.name
-    }:`, oneNFT.address);
-    chain.oneNFT = oneNFT.address;
+    hre.changeNetwork('bscTestnet');
 
-    // create token 1
-    let nftCount = 0;
-    for (let tUrl in metadataUrl) {
-        console.log(metadataUrl[tUrl]);
-        await(await oneNFT.mint(metadataUrl[tUrl])).wait(1);
-        nftCount++;
+    try {
+        await hre.run("verify:verify", {
+            address: streamera.address,
+            constructorArguments: constructorArgs
+        });
+        console.log(`Verified ${chain.streamera}`);
+    } catch(e) {
+        console.log(e);
     }
 
-    console.log(`Minted ${nftCount} nfts on ${chain.name}`);
+    // const nftId = 1;
+    // const contractName = await oneNFT.name();
+    // const nftNonce = await oneNFT.nonces(nftId);
+    // // set deadline in 1 days
+    // const sigExpiry = Math.round(Date.now() / 1000 + (7 * 24 * 60 * 60));
 
-    let currentTime = new Date();
-    currentTime.setDate(currentTime.getDate()+14);
-    const newTime = Math.round(currentTime.getTime() / 1000);
+    // const signature = await sign(contractName, oneNFT.address, marketplace.address, nftId, chain.chainId, nftNonce, sigExpiry, connectedWallet);
 
-    // await(await oneNFT.approve(marketplace.address, 1)).wait(1);
-    // console.log(`Approved nft#1 on ${chain.name}`);
-
-    const nftId = 1;
-    const contractName = await oneNFT.name();
-    const nftNonce = await oneNFT.nonces(nftId);
-    // set deadline in 1 days
-    const sigExpiry = Math.round(Date.now() / 1000 + (7 * 24 * 60 * 60));
-
-    const signature = await sign(contractName, oneNFT.address, marketplace.address, nftId, chain.chainId, nftNonce, sigExpiry, connectedWallet);
-
-    await(await marketplace.makeItem(oneNFT.address, nftId, ethers.utils.parseUnits('0.1', 6), newTime, sigExpiry, signature)).wait(1);
-
-    console.log(`Listed nft in ${
-        chain.name
-    }`);
-
-    // set nftMarketplace on MessageReceiver
-    await(await receiver.setMarketplace(marketplace.address)).wait(1);
-    console.log(`Set marketplace [${
-        marketplace.address
-    }] to ${
-        chain.name
-    } receiver`);
+    // await(await marketplace.makeItem(oneNFT.address, nftId, ethers.utils.parseUnits('0.1', 6), newTime, sigExpiry, signature)).wait(1);
 
     return chain;
 }
@@ -147,12 +69,15 @@ async function deploy(chain: any, metadataUrl: string[], nftName: any) {
 async function main() {
     let cnIndex = 0;
     const promises = [];
+
+    // loop chain to deploy
     for (let cn in chainName) {
         const cName = chainName[cn];
         chainInfo[cn] = chains.find((chain : any) => chain.name === cName);
         console.log(`Deploying [${cName}]`);
+
         // chainInfo[cn] = await deploy(chainInfo[cn], tokenUrl[cnIndex]);
-        promises.push(deploy(chainInfo[cn], tokenUrl[cName], nftName[cnIndex]));
+        promises.push(deploy(chainInfo[cn]));
         cnIndex += 1;
     }
     const result = await Promise.all(promises);
