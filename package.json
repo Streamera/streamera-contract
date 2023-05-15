@@ -10,7 +10,8 @@
     "local-dev:start": "ts-node scripts/start-local-dev.ts",
     "contracts:build": "hardhat compile",
     "contracts:deploy": "ts-node scripts/deploy-contracts.ts",
-    "contracts:execute": "ts-node scripts/execute-contracts.ts"
+    "contracts:execute": "ts-node scripts/execute-contracts.ts",
+    "contracts:full": "hardhat compile && ts-node scripts/deploy-contracts.ts && ts-node scripts/execute-contracts.ts"
   },
   "dependencies": {
     "@0xsquid/sdk": "^1.4.2-beta.0",

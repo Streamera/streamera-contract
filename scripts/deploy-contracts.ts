@@ -7,7 +7,6 @@ import {ethers} from "ethers";
 import _ from "lodash";
 import { TRANSFER_RESULT } from "@axelar-network/axelarjs-sdk";
 import * as hre from 'hardhat';
-import { Squid, TokenData, ChainData } from "@0xsquid/sdk";
 
 const {utils: {
         deployContract
@@ -34,8 +33,10 @@ async function deploy(chain: any) {
     ];
 
     console.log(constructorArgs);
+    // Compare live block vs rpc block, sometime bsc testnet got issue, will stuck
+    console.log(`Current Block: ${await provider.getBlockNumber()}`);
 
-    const streamera = await deployContract(connectedWallet, StreameraContract, constructorArgs,);
+    const streamera = await deployContract(connectedWallet, StreameraContract, constructorArgs);
 
     chain.streamera = streamera.address;
     console.log(`Deployed ${chain.streamera}`);

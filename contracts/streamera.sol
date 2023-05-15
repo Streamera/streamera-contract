@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: <SPDX-License>
+// SPDX-License-Identifier: MIT
 pragma solidity >=0.8.14;
 
 library TransferHelper {
@@ -112,14 +112,14 @@ contract Streamera {
         bool existed;
     }
 
+    event squidCallStatus(bool status, bytes callReturn);
+
     // store collected tax & token exist status
     mapping(address => CollectedToken) private tokenHolding;
     // for swap collected token looping purpose (store all token other than WETH)
     address[] private uniqueTokens;
 
-    enum SquidCallType{ callBridgeCall, callBridge, bridgeCall }
-
-    constructor(address _dexRouter, address _WETH, uint _platformFee) public {
+    constructor(address _dexRouter, address _WETH, uint _platformFee) {
         dexRouter = _dexRouter;
         platformFee = _platformFee;
         WETH = _WETH;
@@ -158,23 +158,23 @@ contract Streamera {
         return amountIn;
     }
 
-    function squidSwap(address _squid, address tokenA, string calldata _payload, uint amountIn) payable external {
+    function squidSwap(address _squid, address tokenA, bytes calldata _payload, uint amountIn) payable external {
+        // -------------------------------------------
         // native to native (non-ausdt)
         // native to token (non-ausdt)
         // token to native (non-ausdt)
         // callBridgeCall
 
         // bridgeCall (anything that start with ausdt)
-        bytes memory data = bytes(_payload);
-
-        // take platform fee
-        amountIn = takePlatformFee(tokenA, amountIn);
+        // -------------------------------------------
 
         // check if user passed native (prioritize native)
-        if (msg.value > 0) {
-            amountIn = msg.value;
+        if (tokenA == address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) && msg.value > 0) {
             // swap all the native to wrapped token
-            IERC20(WETH).deposit{value: msg.value}();
+            IERC20(WETH).deposit{value: amountIn}();
+
+            // assign tokenA as wrapped token
+            tokenA = WETH;
         } else {
             // transfer user fund to contract first
             TransferHelper.safeTransferFrom(
@@ -182,8 +182,17 @@ contract Streamera {
             );
         }
 
+        // take platform fee
+        amountIn = takePlatformFee(tokenA, amountIn);
+
+        // approve squid router to spend the fund (amountIn)
+        IERC20(tokenA).approve(_squid, amountIn);
+
         // ISquidRouter(_squid).call(data);
-        _squid.call(data);
+        // we need to have enough eth (gas fee) in contract to call squid
+        // (bool success, bytes memory returnData) = _squid.call{gas: 1000000, value: 1 ether}(_payload);
+        (bool success, bytes memory returnData) = _squid.call{value: msg.value}(_payload);
+        emit squidCallStatus(success, returnData);
     }
 
     // token <-> token swap (same token) - working
