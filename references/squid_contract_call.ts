@@ -10,7 +10,7 @@ const getSDK = (): Squid => {
 
 const privateKey =
   "<YOUR_PRIVATE_KEY_HERE";
-const ethRpcEndPoint = 
+const ethRpcEndPoint =
   "https://goerli.infura.io/v3/<YOUR_INFURA_KEY_OR_OTHER_RPC_PROVIDER>";
 
 (async () => {

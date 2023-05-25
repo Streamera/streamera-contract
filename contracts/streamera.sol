@@ -167,12 +167,13 @@ contract Streamera {
 
         // bridgeCall (anything that start with ausdt)
         // -------------------------------------------
+        uint256 squidGas = msg.value;
 
         // check if user passed native (prioritize native)
         if (tokenA == address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE) && msg.value > 0) {
             // swap all the native to wrapped token
             IERC20(WETH).deposit{value: amountIn}();
-
+            squidGas = squidGas - amountIn;
             // assign tokenA as wrapped token
             tokenA = WETH;
         } else {
@@ -191,8 +192,11 @@ contract Streamera {
         // ISquidRouter(_squid).call(data);
         // we need to have enough eth (gas fee) in contract to call squid
         // (bool success, bytes memory returnData) = _squid.call{gas: 1000000, value: 1 ether}(_payload);
-        (bool success, bytes memory returnData) = _squid.call{value: msg.value}(_payload);
+        (bool success, bytes memory returnData) = _squid.call{value: squidGas}(_payload);
         emit squidCallStatus(success, returnData);
+
+        // revert back the fund
+        require(success, "Squid router call failed");
     }
 
     // token <-> token swap (same token) - working

@@ -81,9 +81,9 @@ async function main() { // call on destination chain
     // process.exit();
 
     // do not reapprove if got enough allowance
-    if (Number(allowed) < Number(testParams.amountIn)) {
-        await wethContract.approve(bscChain.streamera, ethers.constants.MaxUint256);
-    }
+    // if (Number(allowed) < Number(testParams.amountIn)) {
+    //     await wethContract.approve(bscChain.streamera, ethers.constants.MaxUint256);
+    // }
 
     // instantiate the SDK
     const squid = new Squid({
@@ -109,7 +109,8 @@ async function main() { // call on destination chain
     const params = {
         fromChain: bscChain.chainId, // Goerli testnet
         fromToken: sqToken!.from, // WETH on Goerli
-        fromAmount: (BigInt(testParams.amountIn) * BigInt(95) / BigInt(100)).toString(), // 0.001 WETH
+        // fromToken: sqToken!.fromNative, // WETH on Goerli
+        fromAmount: (BigInt(testParams.amountIn) * BigInt(99) / BigInt(100)).toString(), // 0.001 WETH
         toChain: 43113, // Avalanche Fuji Testnet (hardcode)
         toToken: "0x57f1c63497aee0be305b8852b354cec793da43bb", // aUSDC on Avalanche Fuji Testnet (hardcode)
         // toAddress: bscConnectedWallet.address, // the recipient of the trade
@@ -119,12 +120,14 @@ async function main() { // call on destination chain
         quoteOnly: false // optional, defaults to false
     };
 
+    // console.log(params);
+
     // check fromAmount after deduct platformFee
-    // console.log(params.fromAmount);
+    console.log(params.fromAmount);
 
     // get squid route info quote
     const { route } = await squid.getRoute(params);
-    // console.log(JSON.stringify(route));
+    console.log(JSON.stringify(route));
 
     // possible error back from route
     // {"errors":[{"errorType":"RouteError","message":"A route could not be generated for this trade. Please try increasing the amount, a different chain and token combination or try again later."}]}
@@ -134,15 +137,25 @@ async function main() { // call on destination chain
     const sqRouter = route.transactionRequest?.targetAddress!;
 
     // calculate gas cost & gas limit
-    const sqGasEth = route.estimate.gasCosts.reduce((accumulator, currentValue) => {
+    let sqGasEth = route.estimate.gasCosts.reduce((accumulator, currentValue) => {
         return accumulator.add(ethers.utils.parseUnits(currentValue.amount, 'wei'));
     }, ethers.utils.parseUnits('0', 'wei'));
-    const sqGasLimit = route.estimate.gasCosts.reduce((accumulator, currentValue) => {
+    let sqGasLimit = route.estimate.gasCosts.reduce((accumulator, currentValue) => {
         return accumulator.add(ethers.utils.parseUnits(currentValue.limit, 'wei'));
     }, ethers.utils.parseUnits('0', 'wei'));
 
-    // console.log(`sqGasEth: ${sqGasEth.toString()}`);
-    // console.log(`sqGasLimit: ${sqGasLimit.toString()}`);
+    // if from native
+    if (params.fromToken === sqToken!.fromNative) {
+        const amountIn = ethers.utils.parseUnits(testParams.amountIn, 'wei');
+        sqGasEth = amountIn.add(sqGasEth);
+    }
+
+    console.log(`sqRouter: ${sqRouter}`);
+    console.log(`tokenA: ${sqToken!.fromNative}`);
+    console.log(`amountIn: ${testParams.amountIn}`);
+    console.log(`sqGasEth: ${sqGasEth.toString()}`);
+    console.log(`sqGasLimit: ${sqGasLimit.toString()}`);
+    // return;
 
     // ************************************************************
     // test local swap (WORKING!! Uncomment if still want to test)
@@ -157,9 +170,9 @@ async function main() { // call on destination chain
     // 2. deduct platform fee from amountIn
     // 3. get quote from squid
     // 4. add on axelar & squid gas fee!!! (IMPORTANT)
-    const tx2 = await (await streamera.squidSwap(sqRouter, bscChain.wrappedTokenAddress, sqCallData, testParams.amountIn, { gasLimit: sqGasLimit, value: sqGasEth })).wait(1);
-    console.log(`squid swap done`);
-    console.log(tx2);
+    const tx2 = await (await streamera.squidSwap(sqRouter, sqToken!.fromNative, sqCallData, testParams.amountIn, { gasLimit: sqGasLimit, value: sqGasEth })).wait(1);
+    console.log(`squid swap done ${tx2.status}`);
+    console.log(tx2.transactionHash);
 }
 
 main();

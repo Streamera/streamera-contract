@@ -18,11 +18,25 @@ const StreameraContract = require("../artifacts/contracts/streamera.sol/streamer
 let chains = isTestnet ? require("../config/testnet.json") : require("../config/local.json");
 
 // get chains
-// const chainName = ["Ethereum", "Moonbeam", "Avalanche", "BscTest", "Mumbai", "Fantom"];
-const chainName = [ "BscTest"];
+// const chainName = ["Moonbeam", "Avalanche", "BscTest", "Mumbai", "Fantom"];
+// const chainName = ["Ethereum"];
+
+// npx hardhat verify --list-networks
+const hreName: {[key: string]: string} = {
+    "Ethereum": "goerli",
+    "Moonbeam": "moonbaseAlpha",
+    "Avalanche": "avalancheFujiTestnet",
+    "BscTest": "bscTestnet",
+    "Mumbai": "polygonMumbai",
+    "Fantom": "ftmTestnet"
+}
+// const chainName = [ "Mumbai"];
 const chainInfo: any = [];
 
-const platformFee = 5;
+const platformFee = 1;
+
+// deploy speed on steroid
+const asyncDeploy = true;
 
 async function deploy(chain: any) {
     const provider = getDefaultProvider(chain.rpc);
@@ -32,36 +46,36 @@ async function deploy(chain: any) {
         chain.dex, chain.wrappedTokenAddress, platformFee
     ];
 
-    console.log(constructorArgs);
+    // console.log(constructorArgs);
     // Compare live block vs rpc block, sometime bsc testnet got issue, will stuck
-    console.log(`Current Block: ${await provider.getBlockNumber()}`);
-
-    const streamera = await deployContract(connectedWallet, StreameraContract, constructorArgs);
-
-    chain.streamera = streamera.address;
-    console.log(`Deployed ${chain.streamera}`);
-
-    hre.changeNetwork('bscTestnet');
+    console.log(`${chain.name} Block: ${await provider.getBlockNumber()}`);
 
     try {
-        await hre.run("verify:verify", {
-            address: streamera.address,
-            constructorArguments: constructorArgs
+        const streamera = await deployContract(connectedWallet, StreameraContract, constructorArgs,{
+            gasLimit: 13000000, // Set the desired gas limit here
         });
-        console.log(`Verified ${chain.streamera}`);
+
+        chain.streamera = streamera.address;
+        console.log(`[${chain.name}] Deployed ${chain.streamera}`);
+
+        // AUTO VERIFY DELAY (most like will fail due to blockscan belum index these new contract)
+        // if you want to auto verify contract, uncomment these code
+        // hre.changeNetwork(hreName[chain.name]);
+        // try {
+        //     await hre.run("verify:verify", {
+        //         // address: chain.streamera, //change this to streamera.address
+        //         address: streamera.address, //change this to streamera.address
+        //         constructorArguments: constructorArgs
+        //     });
+        //     console.log(`[${chain.name}] Verified ${chain.streamera}`);
+        // } catch(e) {
+        //     console.log(`[${chain.name}] Failed to verify`);
+        //     // console.log(e);
+        // }
     } catch(e) {
-        console.log(e);
+        // console.log(e);
+        console.log(`[${chain.name}] Failed to deploy`);
     }
-
-    // const nftId = 1;
-    // const contractName = await oneNFT.name();
-    // const nftNonce = await oneNFT.nonces(nftId);
-    // // set deadline in 1 days
-    // const sigExpiry = Math.round(Date.now() / 1000 + (7 * 24 * 60 * 60));
-
-    // const signature = await sign(contractName, oneNFT.address, marketplace.address, nftId, chain.chainId, nftNonce, sigExpiry, connectedWallet);
-
-    // await(await marketplace.makeItem(oneNFT.address, nftId, ethers.utils.parseUnits('0.1', 6), newTime, sigExpiry, signature)).wait(1);
 
     return chain;
 }
@@ -70,18 +84,25 @@ async function deploy(chain: any) {
 async function main() {
     let cnIndex = 0;
     const promises = [];
-
+    let result: any = [];
     // loop chain to deploy
     for (let cn in chainName) {
         const cName = chainName[cn];
         chainInfo[cn] = chains.find((chain : any) => chain.name === cName);
         console.log(`Deploying [${cName}]`);
 
-        // chainInfo[cn] = await deploy(chainInfo[cn], tokenUrl[cnIndex]);
-        promises.push(deploy(chainInfo[cn]));
-        cnIndex += 1;
+        if (asyncDeploy) {
+            promises.push(deploy(chainInfo[cn]));
+            cnIndex += 1;
+        } else {
+            const res = await deploy(chainInfo[cn]);
+            result.push(res);
+        }
     }
-    const result = await Promise.all(promises);
+
+    if (asyncDeploy) {
+        result = await Promise.all(promises);
+    }
 
     // update chains
     // chainInfo = _.values(chainInfo);
